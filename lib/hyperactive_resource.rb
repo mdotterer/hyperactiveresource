@@ -12,73 +12,73 @@ class HyperactiveResource < ActiveResource::Base
     @attributes     = {}.with_indifferent_access
     @prefix_options = {}
     load(attributes)
-  end                             
-  
+  end
+
   #This is required to make it behave like ActiveRecord
-  def attributes=(new_attributes)    
+  def attributes=(new_attributes)
     attributes.update(new_attributes)
   end
-  
+
   #This is also required to behave like ARec
   def save!
     validate
     ( errors.empty? && save ) || raise(RecordNotSaved)
-  end 
-  
+  end
+
   def to_xml(options = {})
-    #RAILS_DEFAULT_LOGGER.debug("** Begin Dumping XML for #{self.class.name}:#{self.id}")    
+    #RAILS_DEFAULT_LOGGER.debug("** Begin Dumping XML for #{self.class.name}:#{self.id}")
     massaged_attributes = attributes.dup
-    
-    #Massage patient.id into patient_id (for every belongs_to) and    
+
+    #Massage patient.id into patient_id (for every belongs_to) and
     massaged_attributes.each do |key, value|
       if self.belong_tos.include? key.to_sym
-        #RAILS_DEFAULT_LOGGER.debug("**** Moving #{key}.id into #{key}_id")        
-        massaged_attributes["#{key}_id"] = value.id #TODO Should check respond_to and so on
-        massaged_attributes.delete(key)       
+        #RAILS_DEFAULT_LOGGER.debug("**** Moving #{key}.id into #{key}_id")
+        massaged_attributes["#{key}_id"] = value && value.id #TODO Should check respond_to and so on
+        massaged_attributes.delete(key)
       elsif key.to_s =~ /^.*_ids$/
         #RAILS_DEFAULT_LOGGER.warn("**** Deleting #{key}.id because we are using the non ids version")
-        massaged_attributes.delete(key)        
+        massaged_attributes.delete(key)
       end
     end
-    
+
     #Skip the things in the skip list
     massaged_attributes = massaged_attributes.reject do |key,value|
       skip_to_xml_for.include? key.to_sym
-    end    
-    
+    end
+
     xml = massaged_attributes.to_xml({:root => self.class.element_name}.merge(options))
     #RAILS_DEFAULT_LOGGER.debug("** End Dumping XML for #{self.class.name}:#{self.id}")
     xml
   end
-    
+
   def save
     return false unless valid?
-    before_save    
+    before_save
     successful = super
-    if successful          
-      after_save 
+    if successful
+      after_save
     end
     successful
-  end    
-  
-  # make sure we can valid? new record  
-  def valid? 
-    errors.clear
-    validate 
-    super 
   end
-  
-  protected  
-  
+
+  # make sure we can valid? new record
+  def valid?
+    errors.clear
+    validate
+    super
+  end
+
+  protected
+
   def save_nested
     @saved_nested_resources = {}
     nested_resources.each do |nested_resource_name|
-      resources = attributes[nested_resource_name.to_s.pluralize] 
+      resources = attributes[nested_resource_name.to_s.pluralize]
       resources ||= send(nested_resource_name.to_s.pluralize)
       unless resources.nil?
         resources.each do |resource|
           @saved_nested_resources[nested_resource_name] = []
-          #We need to set a reference from this nested resource back to the parent  
+          #We need to set a reference from this nested resource back to the parent
 
           fk = self.respond_to?("#{nested_resource_name}_options") ? self.send("#{nested_resource_name}_options")[:foreign_key]  : "#{self.class.name.underscore}_id"
           resource.send("#{fk}=", self.id)
@@ -87,11 +87,11 @@ class HyperactiveResource < ActiveResource::Base
       end
     end
   end
-  
+
   # Update the resource on the remote service.
   def update
     #RAILS_DEFAULT_LOGGER.debug("******** REST Call to CRMS: Updating #{self.class.name}:#{self.id}")
-    #RAILS_DEFAULT_LOGGER.debug(caller[0..5].join("\n"))                             
+    #RAILS_DEFAULT_LOGGER.debug(caller[0..5].join("\n"))
     response = connection.put(element_path(prefix_options), to_xml, self.class.headers)
     save_nested
     load_attributes_from_response(response)
@@ -104,20 +104,20 @@ class HyperactiveResource < ActiveResource::Base
     #RAILS_DEFAULT_LOGGER.debug("******** REST Call to CRMS: Creating #{self.class.name}:#{self.id}")
     #RAILS_DEFAULT_LOGGER.debug(caller[0..5].join("\n"))
     response = connection.post(collection_path, to_xml, self.class.headers)
-    self.id = id_from_response(response) 
+    self.id = id_from_response(response)
     save_nested
     load_attributes_from_response(response)
     merge_saved_nested_resources_into_attributes
     response
-  end  
-  
+  end
+
   ##These are just hooks for debugging
 #  def self.find_every(options)
 #    RAILS_DEFAULT_LOGGER.debug("******** REST Call to CRMS: Getting #{self.name}")
 #    RAILS_DEFAULT_LOGGER.debug(caller[0..5].join("\n"))
 #    super
 #  end
-#        
+#
 #  def self.find_one(options)
 #    RAILS_DEFAULT_LOGGER.debug("******** REST Call to CRMS: Getting #{self.name}")
 #    RAILS_DEFAULT_LOGGER.debug(caller[0..5].join("\n"))
@@ -129,7 +129,7 @@ class HyperactiveResource < ActiveResource::Base
 #    RAILS_DEFAULT_LOGGER.debug(caller[0..5].join("\n"))
 #    super
 #  end
-  
+
   def merge_saved_nested_resources_into_attributes
     @saved_nested_resources.each_key do |nested_resource_name|
       attr_name = nested_resource_name.to_s.pluralize
@@ -139,39 +139,39 @@ class HyperactiveResource < ActiveResource::Base
     end
     @saved_nested_resources = []
   end
-  
+
   def id_from_response(response)
     # response['Location'][/\/([^\/]*?)(\.\w+)?$/, 1]
     Hash.from_xml(response.body).values[0]["id"]
-  end            
-  
+  end
+
   def after_save
   end
-  
+
   def before_save
     before_save_or_validate
   end
-  
+
   def before_validate
     before_save_or_validate
   end
-  
+
   #TODO I don't like the way this works. If you override validate you have to remember to call before_validate or super..
   def validate
     before_validate
   end
-    
+
   def before_save_or_validate
     #Do nothing
-  end     
-  
+  end
+
   class_inheritable_accessor :has_manys
   class_inheritable_accessor :has_ones
   class_inheritable_accessor :belong_tos
   class_inheritable_accessor :columns
   class_inheritable_accessor :skip_to_xml_for
   class_inheritable_accessor :nested_resources
-  
+
   self.nested_resources = []
   self.has_manys = []
   self.has_ones = []
@@ -183,23 +183,23 @@ class HyperactiveResource < ActiveResource::Base
 #  def self.belongs_to( name )
 #    self.belong_tos << name
 #  end
-#    
+#
 #  def self.has_many( name )
 #    self.has_manys << name
 #  end
-#  
+#
 #  def self.column( name )
 #    self.columns << name
-#  end 
-      
-#  When you call any of these dynamically inferred methods 
+#  end
+
+#  When you call any of these dynamically inferred methods
 #  the first call sets it so it's no longer dynamic for subsequent calls
 #  Ie. If there is residencies but no residency_ids
 #  then when you first call residency_ids it'll pull the residency ids into the residency_ids..
 #  But future changes aren't kept in sync (like ActiveRecord.. mostly)
   def method_missing(name, *args)
-    return super if attributes.keys.include? name.to_s         
-    
+    return super if attributes.keys.include? name.to_s
+
     case name
     when *self.columns
       return column_getter_method_missing(name)
@@ -212,46 +212,46 @@ class HyperactiveResource < ActiveResource::Base
     when *self.has_many_ids
       return has_many_ids_getter_method_missing(name)
     when *self.has_ones
-      return has_one_getter_method_missing(name)      
-    end                                     
+      return has_one_getter_method_missing(name)
+    end
 
     super
   end
-  
+
   #Used by method_missing & load to infer setter & getter names from association names
-  def has_many_ids    
+  def has_many_ids
     self.has_manys.map { |hm| "#{hm.to_s.singularize}_ids".to_sym }
   end
-  
+
   #Used by method_missing & load to infer setter & getter names from association names
   def belong_to_ids
     self.belong_tos.map { |bt| "#{bt}_id".to_sym }
   end
-  
+
   #Calls to column getter when there is no attribute for it, nor a previous set called it will return nil rather than freak out
   def column_getter_method_missing( name )
     self.call_setter(name, nil)
   end
-  
+
   #Getter for a belong_to relationship checks if the _id exists and dynamically finds the object
   def belong_to_getter_method_missing( name )
     #If there is a blah_id but not blah get it via a find
     association_id = self.send("#{name.to_s.underscore}_id")
-    (association_id.nil? or ( association_id.respond_to? :empty? and association_id.empty? ) ) ? 
+    (association_id.nil? or ( association_id.respond_to? :empty? and association_id.empty? ) ) ?
       nil : call_setter(name, name.to_s.camelize.constantize.send(:find, association_id ) )
   end
-  
+
   #Getter for a belong_to's id will return the object.id if it exists
   def belong_to_id_getter_method_missing( name )
-    #The assumption is that this will always be called with a name that ends in _id   
+    #The assumption is that this will always be called with a name that ends in _id
     association_name = remove_id name
     unless attributes[association_name].nil? #If there is the obj itself rather than the blah_id
       call_setter( name, self.send(association_name).id ) #Use the blah.id for blah_id
-    else  
+    else
       column_getter_method_missing( name ) #call_setter( name, nil ) #Just like a column
     end
   end
-  
+
   #If there is _ids, but not objects array the method missing for has_many will get each object via id. Otherwise it will return
   #an empty array (like active
   def has_many_getter_method_missing( name )
@@ -260,13 +260,13 @@ class HyperactiveResource < ActiveResource::Base
       call_setter(name, []) #return
     else
       #If we have blah_ids and no blahs, get them all via finds
-      associated_models = association_ids.collect do |associated_id| 
+      associated_models = association_ids.collect do |associated_id|
         name.to_s.singularize.camelize.constantize.send(:find, associated_id)
       end
       call_setter(name, associated_models) #return
     end
   end
-  
+
   def has_many_ids_getter_method_missing( name )
     association_name = remove_id(name).pluralize #(residency_ids => residencies)
     unless attributes[association_name].nil?
@@ -275,24 +275,24 @@ class HyperactiveResource < ActiveResource::Base
       call_setter(name, [])
     end
   end
-  
+
   def has_one_getter_method_missing( name )
-    self.new? ? nil : 
+    self.new? ? nil :
       call_setter( name, name.to_s.camelize.constantize.send("find_by_#{self.class.name.underscore}_id", self.id) )
   end
-  
+
   #Convenience method used by the method_missing methods
   def call_setter( name, value )
     self.send( "#{name}=", value )
   end
-  
+
   #Chops the _id off the end of a method name to be used in method_missing
   def remove_id( name_with_id )
     name_with_id.to_s.gsub(/_ids?$/,'')
   end
-  
+
   #There are lots of differences between active_resource's initializer and active_record's
-  #ARec lets you pass a block 
+  #ARec lets you pass a block
   #Arec doesn't clone
   #Arec calls blah= on everything that's passed in.
   #Arec will turn a "1" into a 1 if it's in an ID column (or any integer for that matter)
@@ -300,13 +300,13 @@ class HyperactiveResource < ActiveResource::Base
   def load(attributes)
     raise ArgumentError, "expected an attributes Hash, got #{attributes.inspect}" unless attributes.is_a?(Hash)
     @prefix_options, attributes = split_options(attributes)
-    attributes.each do |key, value|      
+    attributes.each do |key, value|
       @attributes[key.to_s] =
         case value
           when Array
             #BEGIN ADDITION TO AR::BASE
             load_array(key, value)
-            #END ADDITION              
+            #END ADDITION
           when Hash
             resource = find_or_create_resource_for(key)
             resource.new(value)
@@ -314,7 +314,7 @@ class HyperactiveResource < ActiveResource::Base
             #BEGIN ADDITION TO AR::BASE
             convert_to_i_if_id_field(key, value)
             #WAS: value #.dup rescue value #REMOVED FROM AR:BASE
-            #END ADDITION                                                  
+            #END ADDITION
           end
       #BEGIN ADDITION TO AR::BASE
       call_attribute_setter(key, value)
@@ -325,7 +325,7 @@ class HyperactiveResource < ActiveResource::Base
     #END ADDITION
     result || self
   end
-  
+
   #Called by overriden load
   def load_array( key, value )
     if self.has_many_ids.include? key
@@ -338,16 +338,16 @@ class HyperactiveResource < ActiveResource::Base
       value.map { |attrs| resource.new(attrs) }
     end
   end
-  
+
   #Called by overriden load
   def convert_to_i_if_id_field( key, value )
-    #This might be an id of an association, and if they are passing in a string it should be to_ied                        
+    #This might be an id of an association, and if they are passing in a string it should be to_ied
     if self.belong_to_ids.include? key and not( value.nil? or ( value.respond_to? :empty? and value.empty? ) )
       return value.to_i
     end
     value
   end
-  
+
   #TODO Consolidate this with call_setter
   #Called by overriden load
   def call_attribute_setter( key, value )
@@ -355,20 +355,20 @@ class HyperactiveResource < ActiveResource::Base
     # => Now, we are doing both
     setter_method_name = "#{key}="
     self.send( setter_method_name, @attributes[key.to_s] ) if self.respond_to? setter_method_name
-  end    
-  
-  def self.find_by( all, field, *args )
-    find( all.nil? ? :first : :all, :params => { field => args[0] } )      
   end
-    
-  FINDER_REGEXP = /^find_(?:(all)_?)?by_([a-zA-Z0-9_]+)$/ 
+
+  def self.find_by( all, field, *args )
+    find( all.nil? ? :first : :all, :params => { field => args[0] } )
+  end
+
+  FINDER_REGEXP = /^find_(?:(all)_?)?by_([a-zA-Z0-9_]+)$/
 
   def self.method_missing( symbol, *args )
-    if symbol.to_s =~ FINDER_REGEXP 
+    if symbol.to_s =~ FINDER_REGEXP
       all, field_name = symbol.to_s.scan(FINDER_REGEXP).first #The ^ and $ mean only one thing will ever match this expression so use the first
-      find_by( all, field_name, *args )        
+      find_by( all, field_name, *args )
     else
       super
     end
-  end    
+  end
 end
